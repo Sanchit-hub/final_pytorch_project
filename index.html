@@ -1,0 +1,797 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Augmentation Guessing Game</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&family=Poppins:wght@700&family=Roboto+Mono:wght@500&display=swap" rel="stylesheet">
+    
+    <!-- === 1. ADDED CONFETTI SCRIPT === -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <style>
+        /* Custom styles */
+        body {
+            font-family: 'Inter', sans-serif;
+            /* Added a subtle gradient background */
+            background-color: #f3f4f6;
+            background-image: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        }
+        
+        /* Custom font for title */
+        .font-title {
+            font-family: 'Poppins', sans-serif;
+        }
+        
+        /* Custom font for timer and code */
+        .font-mono {
+            font-family: 'Roboto Mono', monospace;
+        }
+
+        .game-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 4px; /* Slightly larger gap for a cleaner look */
+            max-width: 600px;
+            width: 100%;
+            transition: gap 0.5s ease-in-out;
+            background-color: #e5e7eb; /* bg-gray-200 */
+            border-radius: 8px; /* Rounded corners for the grid container */
+            overflow: hidden; /* Ensure cells stay within rounded border */
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+        }
+        .game-grid.solved {
+            gap: 0; /* Come together animation */
+            border-radius: 12px; /* Sharper radius when solved */
+        }
+        .grid-cell {
+            width: 100%;
+            height: auto;
+            aspect-ratio: 1 / 1;
+            object-fit: cover;
+            cursor: pointer;
+            border: 4px solid transparent; /* Thicker border for selection */
+            transition: all 0.2s ease-in-out;
+            
+        }
+        .grid-cell:hover:not(.solved) {
+             transform: scale(1.03); /* Hover effect */
+             z-index: 5;
+        }
+        .grid-cell.selected {
+            /* Glowing border effect */
+            border-color: #3b82f6; /* blue-500 */
+            transform: scale(1.05); 
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.7);
+            z-index: 10;
+            position: relative;
+        }
+        .grid-cell.solved {
+            border-color: transparent; /* No border when solved */
+            cursor: not-allowed;
+            opacity: 1; 
+        }
+        
+        /* Status Matrix */
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px; /* Increased gap */
+            max-width: 150px; /* Made it a bit smaller */
+            margin-top: 24px;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .status-cell {
+            width: 100%;
+            aspect-ratio: 1 / 1;
+            border-radius: 6px; /* Softer radius */
+            transition: all 0.3s ease;
+            box-shadow: inset 0 2px 4px rgba(0,0,0,0.05);
+        }
+        /* Status cell colors */
+        .status-unsolved { background-color: #d1d5db; } /* gray-300 */
+        .status-wrong { background-color: #f59e0b; } /* amber-500 */
+        .status-solved { background-color: #22c55e; } /* green-500 */
+
+
+        /* Augmentation Modal */
+        #modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6); /* Darker backdrop */
+            backdrop-filter: blur(5px); /* Frosted glass effect */
+            z-index: 40;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+        #modal-backdrop.show {
+            opacity: 1;
+            visibility: visible;
+        }
+        #modal-content {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.95); /* Start smaller */
+            z-index: 50;
+            background: white;
+            border-radius: 16px; /* Larger radius */
+            padding: 0; /* Remove padding for full-width header */
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow: hidden; /* Hide overflow for radius */
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Springy transition */
+        }
+        #modal-backdrop.show #modal-content {
+            opacity: 1;
+            visibility: visible;
+            transform: translate(-50%, -50%) scale(1);
+        }
+        .modal-header {
+             padding: 24px;
+             background-image: linear-gradient(to right, #f9fafb, #f3f4f6);
+             border-bottom: 1px solid #e5e7eb;
+        }
+        .modal-body {
+            padding: 24px;
+            max-height: calc(80vh - 160px); /* Adjust based on header/footer */
+            overflow-y: auto;
+        }
+        
+        .aug-button {
+            transition: all 0.2s ease-in-out;
+            font-family: 'Roboto Mono', monospace; /* Monospaced for code */
+            font-size: 0.9rem;
+            text-align: left;
+            word-break: break-word;
+            border: 1px solid #d1d5db; /* gray-300 */
+            background: #ffffff;
+        }
+        .aug-button:hover:not(:disabled) {
+            background: #f9fafb; /* gray-50 */
+            border-color: #3b82f6;
+            color: #3b82f6;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        }
+        .aug-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Solved Image Animation */
+        #solved-image-container {
+            display: none; /* Hidden by default */
+            animation: fadeIn 1s ease-in-out;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+
+        /* Message Box */
+        #message-box {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px); /* Start off-screen */
+            padding: 16px 24px;
+            border-radius: 8px;
+            color: white;
+            font-weight: 500;
+            z-index: 100;
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275); /* Springy */
+            box-shadow: 0 10px 20px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        #message-box.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0);
+        }
+        .bg-success { background-image: linear-gradient(to right, #22c55e, #16a34a); } /* green */
+        .bg-error { background-image: linear-gradient(to right, #ef4444, #dc2626); } /* red */
+        .bg-info { background-image: linear-gradient(to right, #3b82f6, #2563eb); } /* blue */
+        
+        /* Loading Spinner */
+        #loader {
+            border: 6px solid #e5e7eb; /* light grey */
+            border-top: 6px solid #3b82f6; /* blue */
+            border-radius: 50%;
+            width: 60px;
+            height: 60px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Custom File Input */
+        .custom-button {
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 24px; /* px-6 py-3 */
+            background-color: #2563eb; /* bg-blue-600 */
+            color: white;
+            font-weight: 600; /* font-semibold */
+            border-radius: 8px; /* rounded-lg */
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); /* shadow-md */
+            transition: all 0.3s ease;
+            transform: scale(1); /* for transition */
+        }
+        
+        .custom-button:hover {
+             background-color: #1d4ed8; /* hover:bg-blue-700 */
+             transform: scale(1.05); /* hover:scale-105 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
+
+    <!-- Main Content Card -->
+    <div class="w-full max-w-4xl mx-auto bg-white shadow-2xl rounded-2xl p-6 md:p-10">
+        <!-- Header -->
+        <div class="text-center mb-8">
+            <h1 class="font-title text-4xl md:text-5xl font-bold text-gray-800">
+                <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-500">
+                    Augmentation Guessing Game
+                </span>
+            </h1>
+            <p id="sub-header" class="text-gray-600 mt-3 text-lg">Upload an image to begin the challenge!</p>
+        </div>
+        
+        <!-- Upload Section -->
+        <div id="upload-section" class="text-center">
+            <!-- Hide the actual file input -->
+            <input type="file" id="image-uploader" accept="image/*" class="hidden"/>
+            <!-- Style a label to look like a button -->
+            <label for="image-uploader" id="upload-button" class="custom-button">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Choose an Image
+            </label>
+
+            <!-- === 1. ADDED PLAY AGAIN BUTTON === -->
+            <button id="play-again-button" class="custom-button hidden bg-green-600 hover:bg-green-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m-15.357-2a8.001 8.001 0 0015.357 2m0 0H15" />
+                </svg>
+                Play Again?
+            </button>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div id="loader" class="hidden mx-auto my-16"></div>
+
+        <!-- Game Section -->
+        <div id="game-section" class="hidden">
+            <!-- Timer & Stats Wrapper -->
+            <div class="flex justify-center items-center mb-6">
+                <div class="text-center">
+                    <span class="text-3xl font-mono p-3 px-5 rounded-lg bg-gray-900 text-green-400 shadow-inner">
+                        <span id="timer">00:00:0</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Game Board Wrapper -->
+            <div class="flex flex-col items-center">
+                <!-- 1. Image Grid -->
+                <div id="game-grid" class="game-grid mx-auto">
+                    <!-- Cells will be populated by JS -->
+                </div>
+                
+                <!-- 3. Solved Image (Hidden) -->
+                <div id="solved-image-container" class="hidden max-w-[600px] w-full mt-[-24px]"> <!-- Negative margin to align with grid */ -->
+                    <img id="solved-image" src="" alt="Solved Game" class="w-full h-auto rounded-lg shadow-xl" />
+                </div>
+
+                <!-- 2. Status Matrix -->
+                <div id="status-grid" class="status-grid mx-auto">
+                    <!-- Status cells will be populated by JS -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Augmentation Modal -->
+    <div id="modal-backdrop">
+        <div id="modal-content">
+            <!-- Modal Header -->
+            <div class="modal-header flex justify-between items-center">
+                <h2 class="text-2xl font-bold font-title text-gray-800">Guess the Augmentation</h2>
+                <button id="close-modal-btn" class="text-gray-400 hover:text-gray-800 text-4xl leading-none transition-colors">&times;</button>
+            </div>
+            <!-- Modal Body (Scrollable) -->
+            <div id="augmentation-buttons" class="modal-body flex flex-col gap-3">
+                <!-- Buttons will be populated by JS -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Message Box -->
+    <div id="message-box">
+        <!-- SVG icon will be injected here -->
+    </div>
+
+    <script>
+        // --- Constants ---
+        
+        const BACKEND_URL = 'http://127.0.0.1:5000';
+
+        // --- DOM Elements ---
+        const uploader = document.getElementById('image-uploader');
+        const uploadSection = document.getElementById('upload-section');
+        const uploadButton = document.getElementById('upload-button'); // Get the label
+        const playAgainButton = document.getElementById('play-again-button'); // Get the new button
+        const gameSection = document.getElementById('game-section');
+        const gameGrid = document.getElementById('game-grid');
+        const statusGrid = document.getElementById('status-grid');
+        const loader = document.getElementById('loader');
+        const messageBox = document.getElementById('message-box');
+        const timerDisplay = document.getElementById('timer');
+        const modalBackdrop = document.getElementById('modal-backdrop');
+        const modalContent = document.getElementById('modal-content');
+        const closeModalBtn = document.getElementById('close-modal-btn');
+        const augButtonsContainer = document.getElementById('augmentation-buttons');
+        const solvedImageContainer = document.getElementById('solved-image-container');
+        const solvedImage = document.getElementById('solved-image');
+        const subHeader = document.getElementById('sub-header');
+
+        // --- Message Box Icons ---
+        const ICONS = {
+            success: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+            error: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`,
+            info: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`
+        };
+
+        // --- Game State ---
+    let selectedCellIndex = null;
+    let attempts = {}; // e.g., { 0: 2, 1: 2, ... }
+    let originalGridSources = {}; // To restore image after wrong guess preview
+    let isProcessing = false; // Prevent spamming guesses
+    let isUploading = false; // Prevent duplicate uploads / double-trigger
+        let messageTimeout = null;
+        let gameStartTime = 0;
+        let timerInterval = null;
+        let solvedPieces = 0;
+        let totalGuesses = 0;
+        let allAugmentations = []; // Will store {name, code} dicts
+        let fullOriginalImage = ''; // Store b64 string for full image
+
+        // --- Event Listeners ---
+        
+        // === 2. UPDATED EVENT LISTENERS ===
+        uploadButton.addEventListener('click', (e) => {
+            // Prevent opening the picker if an upload is already in progress
+            if (isUploading) {
+                e.preventDefault();
+                console.log('Upload blocked: already uploading');
+                return;
+            }
+            // Reset uploader value so selecting the same file fires the change event
+            uploader.value = null;
+            // Do NOT call uploader.click() because the label has `for="image-uploader"`
+            // and will already open the file picker. Calling click() here caused a
+            // double-trigger/race on some browsers.
+            console.log('Upload button clicked — awaiting file selection');
+        });
+        uploader.addEventListener('change', handleImageUpload);
+        
+        playAgainButton.addEventListener('click', () => {
+             // Reset UI
+            playAgainButton.classList.add('hidden');
+            uploadButton.classList.remove('hidden');
+            uploadSection.classList.remove('hidden'); // Show the whole upload section
+            gameSection.classList.add('hidden'); // === BUGFIX: Hide game section ===
+            gameGrid.classList.remove('hidden'); // Un-hide grid
+            statusGrid.classList.remove('hidden'); // Un-hide status
+            solvedImageContainer.classList.add('hidden'); // Hide solved image
+            subHeader.textContent = 'Upload an image to begin the challenge!';
+            
+            // Clear the file input value to fix "upload twice" bug
+            uploader.value = null; 
+        });
+        
+        closeModalBtn.addEventListener('click', hideModal);
+        modalBackdrop.addEventListener('click', (e) => {
+            if (e.target === modalBackdrop) hideModal();
+        });
+
+        // --- Functions ---
+        
+        function triggerConfetti() {
+            // === BUGFIX: Wrap in try...catch to prevent script-breaking errors ===
+            try {
+                console.log("Triggering confetti!"); // For debugging
+                if (typeof confetti !== 'function') {
+                    console.warn("Confetti script not loaded.");
+                    return;
+                }
+                
+                const duration = 3 * 1000;
+                const animationEnd = Date.now() + duration;
+                const defaults = { startVelocity: 30, spread: 360, ticks: 60, zIndex: 100 };
+
+                function randomInRange(min, max) {
+                    return Math.random() * (max - min) + min;
+                }
+
+                const interval = setInterval(function() {
+                    const timeLeft = animationEnd - Date.now();
+                    if (timeLeft <= 0) {
+                        return clearInterval(interval);
+                    }
+                    const particleCount = 50 * (timeLeft / duration);
+                    // since particles fall down, start a bit higher than random
+                    confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.1, 0.3), y: Math.random() - 0.2 } });
+                    confetti({ ...defaults, particleCount, origin: { x: randomInRange(0.7, 0.9), y: Math.random() - 0.2 } });
+                }, 250);
+            } catch (e) {
+                console.error("Confetti error:", e);
+            }
+        }
+
+        function showMessage(text, type = 'info', duration = 3000) {
+            if (messageTimeout) clearTimeout(messageTimeout);
+            
+            // Set icon and text
+            messageBox.innerHTML = `${ICONS[type] || ICONS.info} <span>${text}</span>`;
+            
+            // Set class for color
+            messageBox.className = `bg-${type} show`;
+            
+            messageTimeout = setTimeout(() => {
+                messageBox.classList.remove('show');
+            }, duration);
+        }
+
+        async function handleImageUpload(event) {
+            // Guard: prevent re-entry
+            if (isUploading) {
+                console.log('handleImageUpload ignored: already uploading');
+                return;
+            }
+
+            const file = event.target.files[0];
+            if (!file) return;
+
+            // Mark uploading state and disable UI to prevent double submissions
+            isUploading = true;
+            uploader.disabled = true;
+            uploadButton.classList.add('opacity-50', 'pointer-events-none');
+
+            console.log('Starting upload for file:', file.name, file.size);
+
+            loader.classList.remove('hidden');
+            uploadSection.classList.add('hidden'); // Hide the whole section
+            gameSection.classList.add('hidden');
+            statusGrid.classList.remove('hidden'); // Ensure status grid is visible
+            subHeader.textContent = 'Processing your image...'; // Update subheader
+            
+            if (timerInterval) clearInterval(timerInterval);
+            timerDisplay.textContent = '00:00:0';
+            
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/upload`, {
+                    method: 'POST',
+                    body: formData,
+                });
+                
+                if (!response.ok) {
+                    let errorMsg = 'Failed to upload image.';
+                    try {
+                        const err = await response.json();
+                        errorMsg = err.error || 'Server error. Please check backend console.';
+                    } catch (e) {
+                        errorMsg = 'Server returned an invalid response (not JSON). Is the backend running?';
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                const data = await response.json();
+                initializeGame(data);
+                // Upload finished successfully — clear uploading state (UI may hide uploadSection)
+                isUploading = false;
+                try { uploader.disabled = false; } catch(e){}
+                uploadButton.classList.remove('opacity-50', 'pointer-events-none');
+            } catch (error) {
+                console.error('Upload Error:', error);
+                showMessage(`Error: ${error.message}`, 'error', 5000);
+                loader.classList.add('hidden');
+                uploadSection.classList.remove('hidden'); // Show section again on error
+                subHeader.textContent = 'Upload an image to begin the challenge!';
+                // Reset uploading state on error so the user can try again
+                isUploading = false;
+                try { uploader.disabled = false; } catch(e){}
+                uploadButton.classList.remove('opacity-50', 'pointer-events-none');
+            }
+        }
+
+        function initializeGame(data) {
+            // Clear previous game
+            gameGrid.innerHTML = '';
+            statusGrid.innerHTML = '';
+            augButtonsContainer.innerHTML = '';
+            attempts = {};
+            originalGridSources = {};
+            selectedCellIndex = null;
+            isProcessing = false;
+            gameGrid.classList.remove('solved');
+            solvedImageContainer.classList.add('hidden');
+            gameGrid.classList.remove('hidden');
+            statusGrid.classList.remove('hidden'); // Make sure it's visible on new game
+            
+            // Ensure buttons are in correct state
+            playAgainButton.classList.add('hidden');
+            uploadButton.classList.remove('hidden');
+
+            // Save data
+            allAugmentations = data.all_augmentations;
+            fullOriginalImage = data.original_full_image;
+
+            // Reset and Start Timer
+            solvedPieces = 0;
+            totalGuesses = 0;
+            gameStartTime = Date.now();
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(updateTimer, 100);
+
+            // 1. Populate Grid and Status Matrix
+            data.augmented_images.forEach((imgBase64, i) => {
+                // Create grid cell
+                const img = document.createElement('img');
+                img.src = `data:image/jpeg;base64,${imgBase64}`;
+                img.className = 'grid-cell';
+                img.dataset.index = i;
+                img.addEventListener('click', () => handleCellClick(i));
+                gameGrid.appendChild(img);
+                
+                // Create status cell
+                const statusCell = document.createElement('div');
+                statusCell.className = 'status-cell status-unsolved'; // Use new class
+                statusCell.dataset.index = i;
+                statusGrid.appendChild(statusCell);
+                
+                // Initialize game state
+                attempts[i] = 2; // 2 attempts per piece
+                originalGridSources[i] = img.src;
+            });
+
+            // 2. Populate Augmentation Buttons (in modal)
+            allAugmentations.forEach(aug => {
+                const button = document.createElement('button');
+                button.textContent = aug.code; // Show the code
+                button.dataset.name = aug.name; // Store the simple name for the backend
+                button.className = 'aug-button w-full font-mono bg-white hover:bg-gray-100 text-gray-800 font-semibold py-3 px-4 border border-gray-300 rounded-lg shadow-sm';
+                button.addEventListener('click', () => handleGuess(aug.name));
+                augButtonsContainer.appendChild(button);
+            });
+            
+            // Show game
+            loader.classList.add('hidden');
+            gameSection.classList.remove('hidden');
+            uploadSection.classList.add('hidden'); // Hide upload section during game
+            subHeader.textContent = 'Click a distorted piece to make your guess!';
+            showMessage('Game started! Good luck!', 'info');
+        }
+
+        function updateTimer() {
+            const elapsed = Date.now() - gameStartTime;
+            const minutes = String(Math.floor(elapsed / 60000)).padStart(2, '0');
+            const seconds = String(Math.floor((elapsed % 60000) / 1000)).padStart(2, '0');
+            const millis = String(Math.floor((elapsed % 1000) / 100));
+            timerDisplay.textContent = `${minutes}:${seconds}:${millis}`;
+        }
+
+        function handleCellClick(index) {
+            if (isProcessing || attempts[index] === 0) return;
+
+            // Remove 'selected' from previously selected cell
+            if (selectedCellIndex !== null) {
+                document.querySelector(`.grid-cell[data-index='${selectedCellIndex}']`)?.classList.remove('selected');
+            }
+
+            // Add 'selected' to the new cell
+            selectedCellIndex = index;
+            document.querySelector(`.grid-cell[data-index='${selectedCellIndex}']`)?.classList.add('selected');
+            
+            // Show the modal
+            showModal();
+        }
+
+        function showModal() {
+            modalBackdrop.classList.add('show');
+        }
+
+        function hideModal() {
+            modalBackdrop.classList.remove('show');
+            // Deselect the cell if modal is closed without a guess
+            if (selectedCellIndex !== null) {
+                 document.querySelector(`.grid-cell[data-index='${selectedCellIndex}']`)?.classList.remove('selected');
+                 selectedCellIndex = null;
+            }
+        }
+
+        async function handleGuess(guessName) {
+            if (selectedCellIndex === null) return; 
+            if (isProcessing) return;
+            
+            isProcessing = true;
+            totalGuesses++;
+            disableModalButtons(true);
+
+            const attemptsForThisCell = attempts[selectedCellIndex];
+
+            try {
+                const response = await fetch(`${BACKEND_URL}/guess`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        index: selectedCellIndex,
+                        guess_name: guessName,
+                        attempts_left: attemptsForThisCell
+                    })
+                });
+                
+                if (!response.ok) {
+                    let errorMsg = 'Failed to make guess.';
+                    try {
+                        const err = await response.json();
+                        errorMsg = err.error || 'Server error. Please check backend console.';
+                    } catch (e) {
+                        errorMsg = 'Server returned an invalid response (not JSON). Is the backend running?';
+                    }
+                    throw new Error(errorMsg);
+                }
+
+                const data = await response.json();
+                processGuessResult(data, guessName);
+
+            } catch (error) {
+                console.error('Guess Error:', error);
+                showMessage(`Error: ${error.message}`, 'error', 5000);
+                isProcessing = false;
+                disableModalButtons(false);
+            }
+        }
+        
+        function disableModalButtons(disabled) {
+            augButtonsContainer.querySelectorAll('button').forEach(btn => {
+                btn.disabled = disabled;
+            });
+        }
+
+        function processGuessResult(data, guessName) {
+            const guessIndex = selectedCellIndex; 
+            
+            const cell = document.querySelector(`.grid-cell[data-index='${guessIndex}']`);
+            const statusCell = document.querySelector(`.status-cell[data-index='${guessIndex}']`);
+            if (!cell || !statusCell) {
+                isProcessing = false;
+                disableModalButtons(false);
+                return;
+            }
+
+            hideModal(); // Hide modal on guess
+
+            if (data.correct) {
+                // --- CORRECT ---
+                cell.src = `data:image/jpeg;base64,${data.original_image}`;
+                cell.classList.remove('selected');
+                cell.classList.add('solved');
+                statusCell.className = 'status-cell status-solved';
+                attempts[guessIndex] = 0; // Mark as solved
+                isProcessing = false;
+                disableModalButtons(false);
+                
+                solvedPieces++;
+                if (solvedPieces === 9) {
+                    // --- GAME COMPLETE ---
+                    clearInterval(timerInterval);
+                    triggerConfetti(); 
+                    const finalTime = timerDisplay.textContent;
+                    const accuracy = (9 / totalGuesses * 100).toFixed(1);
+                    subHeader.textContent = `Completed! Your accuracy was ${accuracy}%.`;
+                    showMessage(`Complete! Time: ${finalTime} | Accuracy: ${accuracy}%`, 'success', 10000);
+                    
+                    gameGrid.classList.add('solved');
+                    setTimeout(() => {
+                        gameGrid.classList.add('hidden');
+                        statusGrid.classList.add('hidden'); // Hide status grid
+                        gameSection.classList.add('hidden'); // === BUGFIX: Hide timer ===
+                        solvedImage.src = `data:image/jpeg;base64,${fullOriginalImage}`;
+                        solvedImageContainer.classList.remove('hidden');
+                        
+                        // === 3. SHOW PLAY AGAIN, HIDE UPLOAD ===
+                        uploadSection.classList.remove('hidden'); // Show the section
+                        uploadButton.classList.add('hidden'); // Hide the upload button
+                        playAgainButton.classList.remove('hidden'); // Show the play again button
+                    }, 1000); 
+                } else {
+                    showMessage('Correct! Well done!', 'success');
+                }
+
+            } else {
+                // --- WRONG ---
+                attempts[guessIndex] = data.attempts_left;
+                
+                cell.src = `data:image/jpeg;base64,${data.wrong_guess_effect}`;
+                
+                if (data.attempts_left > 0) {
+                    // --- WRONG, ATTEMPTS REMAIN ---
+                    showMessage(`Wrong! That's what "${guessName}" looks like. ${data.attempts_left} attempt(s) left.`, 'error');
+                    statusCell.className = 'status-cell status-wrong'; // Mark as incorrect
+                    
+                    setTimeout(() => {
+                        cell.src = originalGridSources[guessIndex]; 
+                        isProcessing = false;
+                        disableModalButtons(false);
+                    }, 2000);
+
+                } else {
+                    // --- WRONG, OUT OF ATTEMPTS ---
+                    showMessage(`Out of attempts! The answer was: ${data.correct_answer}`, 'info', 5000);
+                    statusCell.className = 'status-cell status-solved'; // Mark as solved
+                    
+                    setTimeout(() => {
+                        cell.src = `data:image/jpeg;base64,${data.original_image}`;
+                        cell.classList.remove('selected');
+                        cell.classList.add('solved');
+                        isProcessing = false;
+                        disableModalButtons(false);
+
+                        solvedPieces++;
+                        if (solvedPieces === 9) {
+                            clearInterval(timerInterval);
+                            triggerConfetti();
+                            const finalTime = timerDisplay.textContent;
+                            const accuracy = (9 / totalGuesses * 100).toFixed(1);
+                            subHeader.textContent = `Completed! Your accuracy was ${accuracy}%.`;
+                            showMessage(`Complete! Time: ${finalTime} | Accuracy: ${accuracy}%`, 'success', 10000);
+                            gameGrid.classList.add('solved');
+                            setTimeout(() => {
+                                gameGrid.classList.add('hidden');
+                                statusGrid.classList.add('hidden'); // Hide status grid
+                                gameSection.classList.add('hidden'); // === BUGFIX: Hide timer ===
+                                solvedImage.src = `data:image/jpeg;base64,${fullOriginalImage}`;
+                                solvedImageContainer.classList.remove('hidden');
+
+                                // === 3. SHOW PLAY AGAIN, HIDE UPLOAD ===
+                                uploadSection.classList.remove('hidden'); // Show the section
+                                uploadButton.classList.add('hidden'); // Hide the upload button
+                                playAgainButton.classList.remove('hidden'); // Show the play again button
+                            }, 1000);
+                        }
+                    }, 2000); 
+                }
+            }
+        }
+    </script>
+</body>
+</html>
+
